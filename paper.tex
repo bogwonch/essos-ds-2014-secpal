@@ -1,0 +1,419 @@
+\documentclass[]{llncs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{proof}
+\usepackage{graphicx}
+\usepackage{svg}
+
+\title{Towards an authorization framework for app security checking}
+\author{Joseph Hallett
+  \and David Aspinall
+  %\and Nassim Seghir
+  %\and Wei Chen
+}
+\institute{University of Edinburgh}
+\date{\today}
+
+% A) Position papers of PhD students in an early stage of their project should
+%    fulfill the following requirements.
+% * Length: two to six pages
+% * Format: Submissions should be formatted according to the LNCS guidelines.
+% * Content:
+%   * Authors’ names (PhD student + contributing team members if applicable)
+%   * affiliation
+%   * an abstract (maximum 200 words)
+%   * the problem(s) that the proposed research is going to solve, and the
+%     motivation for solving them
+%   * the aims and objectives of the proposed research
+%   * the potential contributions to the state-of-the-art
+%   * the research methodology to be used to achieve the research goals,
+%     including a brief description of the work done to date and a tentative
+%     research plan for future work
+%   * the main contribution(s) of the research to the field of Engineering
+%     Secure Software and Systems
+
+\newcommand{\keyword}[1]{\textsf{#1}}
+\newcommand{\entity}[1]{\textrm{#1}}
+\newcommand{\vari}[1]{\textsl{#1}}
+
+\newcommand{\says}{\keyword{~says~}}
+\newcommand{\cansay}[1]{\keyword{~can say}_{#1}~}
+\newcommand{\iffacts}{\keyword{~if~}}
+\newcommand{\meets}{\keyword{~meets~}}
+\newcommand{\shows}{\keyword{~shows~}}
+\newcommand{\installable}{\keyword{~is installable}}
+
+\newcommand{\Phone}{\entity{Phone}}
+\newcommand{\Nll}{\entity{NoInfoLeaks}}
+\newcommand{\Nlli}{\entity{NILInferer}}
+\newcommand{\Nm}{\entity{NotMalware}}
+\newcommand{\Avc}{\entity{AVChecker}}
+\newcommand{\Google}{\entity{Google}}
+\newcommand{\App}{\entity{Game}}
+\newcommand{\Evi}{\entity{Evidence}}
+
+\newcommand{\LocalChecks}[2]{\textsf{Local#2Check}{\left(#1\right)}}
+
+\newcommand{\app}{\vari{app}}
+\newcommand{\policy}{\vari{policy}}
+\newcommand{\evi}{\vari{evidence}}
+\newcommand{\fact}{\vari{fact}}
+
+\newcommand{\rrule}[1]{\textsc{\small #1}}
+\newcommand{\rcansay}{\rrule{can say}}
+\newcommand{\rcond}[1]{\rrule{cond #1}}
+
+\newcommand{\eref}[1]{(\ref{#1})}
+
+\begin{document}
+\maketitle
+
+\begin{abstract} 
+  
+  Apps don't come with any guarantees that they are not malicious.  This paper
+  introduces a PhD project designing the authorization framework used for App
+  Guarden. App~Guarden is a new project that uses a flexible assurance
+  framework based on distribution of evidence, attestation and checking
+  algorithms to make explicit why an app isn't dangerous and to allow users to
+  describe how they want apps on their devices to behave.  We use the SecPAL
+  policy language to implement a device policy and give a brief example of a
+  policy being used. Finally we use SecPAL to describe some of the differences
+  between current app markets. 
+
+\end{abstract}
+
+\section{Introduction}
+
+App~stores allow users to buy and install software on their devices with a
+minimum of fuss.  Users trust the app stores not to supply them with malware
+but sometimes this trust is misplaced. A survey of the various different
+Android markets revealed some malware in all of them---including Google's own
+Play Store~\cite{Zhou:2012tb}.  Malware on mobile platforms typically steals
+user information and monetises itself by sending premium rate text
+messages~\cite{Felt:2011we}.  
+Sometimes malware on mobile platforms isn't intentional: developers are not
+security specialists and sometimes make poor security decisions such as signing
+apps with the same key~\cite{Barrera:2012ib} which can lead to permission
+escalation on Android or by requesting excessive
+permissions~\cite{Felt:2011kj}.
+
+Both Google and Apple (who operate the two biggest app markets) check apps
+submitted to them for malicious code, however neither states exactly what they
+check for. There is expectation amongst users that these markets check for and
+are free from malware, but this trust is misplaced~\cite{Enck:2010ta}. Attempts
+to reverse engineer the checking procedures for Google's store suggest that
+they incorporate static and dynamic analysis as well as manual checking by a
+human being~\cite{Oberheide:2012tl}. They offer no guarantees however that any
+check was actually run.
+
+Digital evidence~\cite{Stark:2009uc} can be used to confirm the results from
+static analyses; it is similar to older techniques~\cite{Necula:1996tr} and
+allows us to split the \emph{inferring} of a static analysis result (which may
+be computationally expensive) from the \emph{checking} the evidence (which
+should be efficient).  This allows us to verify the results of static analyses
+for security properties without having to fully run the analysis.
+
+Static analysis checks used to create digital evidence could include taint
+analysis tools to check where sensitive information is being leaked between
+apps~\cite{Enck:2010uw}, or a security proof based on the architecture of the
+machine~\cite{Barthe:2007bd}.  
+
+The App~Guarden project aims to use digital evidence to provide apps with
+guarantees that the app cannot act maliciously.  This will allow us to make
+explicit the checks made on an app.  With explicit checks users will be able to
+write policies which describe what kinds of apps they will allow on their
+devices, and what level of trust they require in these checks for an app to be
+considered \emph{installable}.  We aim to create an enhanced app~store that
+uses inference services, and assurance logics on a modified Android to increase
+trust in devices. 
+
+Figure~\ref{fig:architecture} shows an App~Guarden store. It provides apps with
+evidence generated by an inference service.  Devices can check the evidence
+using a trusted checking service, or rely on their trust that the store
+believed the app to be safe.  The SecPAL Engine on the phone is used to check
+the assertions made by the store and the checker service and enforce a device
+policy.
+
+\begin{figure}[h]
+  \centering
+  \def\svgwidth{0.57\textwidth}
+  \scriptsize\sf
+  \input{architecture.eps_tex}
+  \caption{The architecture of App~Guarden.}\label{fig:architecture}
+\end{figure}
+
+\section{Aims and Objectives}
+
+Our aim is to create a modified Android ecosystem where apps
+come with digital evidence for security and where users can say how
+they want apps to behave on their device. To do this we will:
+\begin{itemize}
+  \item Show how an authorization logic can specify a policy for how a
+    device behaves.  This will use ideas
+    such as proof checking and inference, and show how trust can be
+    distributed between principals.
+
+  \item Show how to use the logic to specify a device policy. We will use
+    digital evidence, and assertions between trusted principals and show how
+    the trust relationships can be propagated between devices. We show how we
+    can use these statements to build confidence that an app is secure.
+
+  \item Describe the differences between current app markets using the
+    logic and show how they manage access to special resources
+    (such as the address book or a user's photos).  This will allow us to
+    compare App~Guarden to other systems and allow comparison between other
+    different schemes.
+
+  \item Put the logic in a real device and app store and see how
+    the system behaves with real malware and how they interact with device
+    policies.  We will look for ways to attack devices with our framework and
+    explore it's limitations.
+\end{itemize}
+
+
+\section{SecPAL and App~Guarden}
+
+Suppose a user has a mobile device.  They might wish that:
+
+\begin{quote}
+  ``No app installed on my phone will send my location to an advertiser, and I
+  wont install anything that Google says is malware.''
+\end{quote}
+
+We call this their \emph{device policy}.  It says what the user will allow on
+their device for an app to be installable. To formally write the device
+policies we use the SecPAL authorization language~\cite{Becker:2006vh}. The
+device policy is show in~\eref{sp:DevicePolicy}. SecPAL is designed for
+distributed access control decisions.  It was designed to be human readable
+which makes it ideal for our application as we would like users to be able to
+understand (if perhaps not write) their own device policies. Another advantage
+is that it lets us separate the constraint solving (the digital evidence
+checking) from the authorization logic.  This means there is no restriction on
+having the digital evidence be in the same format and logic as the assurance
+framework (as is the case with other authorization logics such as
+BLF~\cite{Whitehead:2004bu}); this increases our flexibility for implementation
+as we can re-purpose existing logic solvers.
+
+SecPAL is designed to be extensible.  Authorization statements take the form of
+assertions made by principals.  Statements can include predicates which are
+defined by the SecPAL program, as well as \emph{constraints} (as
+seen in~\eref{sp:NlliSaysEviShowsAppPol}) that can be checked as sub-procedures
+for the main query engine.  We add the following statements: 
+
+\begin{align}
+  e_\text{evidence}\shows e_\text{app}\meets e_\text{policy} \label{eqn:shows}\\
+  e_\text{app}\meets e_\text{policy} \label{eqn:meets}
+\end{align}
+
+The\shows\dots\meets{}predicate in~\eref{eqn:shows} tells us that some evidence
+could be checked to show that an app satisfies a security policy; an example of
+which can be seen in~\eref{sp:NlliSaysEviShowsAppPol} bellow (and which also
+uses a constraint). The plain\meets{}in~\eref{eqn:meets} is an assertion that
+an app meets a policy whilst offering no actual evidence that the app is
+secure. The\shows{}statement is stronger than the\meets{}statement as anyone
+who says that some evidence shows an app meets a policy suggests they would
+also say the app meets policy.  We can write this in SecPAL with the assertion:
+``\(\Phone\says\app\meets\vari{policy}\iffacts\vari{evidence}\shows\app\meets\policy\).''
+
+We also add an\installable~statement to indicate an app is installable on a
+device and a \keyword{requires} statement to say an app needs a permission to
+run.
+
+SecPAL allows for attestation of said statements with the \emph{can say}
+statement: these come with a delegation depth.  A delegation depth of zero (as
+shown in~\eref{sp:NlliCanSayNll}) means the statement must be spoken by the
+principal and given to us directly
+in the assertion context. A delegation depth of infinity (as
+in~\eref{sp:GoogleCanSayNm}) means that the statement might not be given to us
+directly but rather inferred from a statement by different principal but with
+several  \emph{can say} phrases linking it back to the required principal.
+
+
+%\section{Querying SecPAL}
+
+To evaluate the device policy and decide whether a specific app is installable
+SecPAL requires a set of assertions called the \emph{assertion-context}. An
+example assertion-context and the proof, using two of SecPAL's evaluation rules
+from the original paper~\cite{Becker:2006vh}. To illustrate a usage of SecPAL
+we give an example where a user wishes to decide whether an app \App{} can be
+installed. To do this we use the assertion context bellow:
+
+\begin{align}
+    AC & \coloneqq \left\{ \right. \nonumber\\
+    \Phone&\says \app\installable \nonumber\\
+    \iffacts&\app\meets\Nm, \nonumber\\
+            &\app\meets\Nll.
+  \label{sp:DevicePolicy}\\
+    \Phone&\says \app\meets\policy \iffacts \evi\shows\app\meets\policy.
+  \label{sp:showsmeets}\\
+    \Phone&\says\Nlli\cansay 0\app\meets\Nll.
+  \label{sp:NlliCanSayNll}\\
+    \Phone&\says
+    \Google\cansay\infty
+    \app\meets\Nm.
+  \label{sp:GoogleCanSayNm}\\
+    \Google&\says\Avc\cansay 0\app\meets\Nm.
+  \label{sp:AvcCanSayNm}\\
+    \Avc&\says\App\meets\Nm.
+  \label{sp:AvcSaysNm}\\
+    \Nlli&\says\Evi\shows\App\meets\Nll \nonumber\\
+         & \iffacts \LocalChecks{\Evi,  \App}{NIL}=\textsf{true}.
+  \label{sp:NlliSaysEviShowsAppPol}\\
+  \left.\right\}\nonumber
+\end{align}
+
+We evaluate it using the SecPAL rules shown in the
+\textsc{cond}~\eref{rule:cond} and \textsc{can say}~\eref{rule:cansay} rules.
+The \textsc{cond} rule is SecPAL's equivalent to the \emph{modus ponens} rule.
+Whereas \textsc{can say} is similar to \emph{speaks for} relationships
+\cite{Abadi:2003kta}:  if a first principal says a second principal can say
+something and the second does say it then the first says it too. $AC$
+represents the assertion context, $D$ is the current delegation level. From
+these rules and the assertion context we can prove an assertion that
+``\(\Phone\says\App\installable\).''
+
+\begin{equation}
+  \scalebox{0.8}{%
+  \infer[\rcond{}]{%
+    \left\{A\says\fact\iffacts\fact_1,  \dots\fact_n,  c\right\}\cup AC,  D \models
+      A\says\fact
+  }{%
+    \begin{split}
+    \left\{A\says\fact\iffacts\fact_1,  \dots,  \fact_n,  c\right\}\cup AC,  D \models
+      A\says\fact_1,  \dots,  \fact_n \\
+    \models c \\
+    vars(\fact) = \emptyset
+    \end{split}
+  }}
+  \label{rule:cond}\\
+\end{equation}
+
+\begin{equation}
+  \scalebox{0.8}{%
+  \infer[\rcansay]{%
+    AC,  \infty\models A\says\fact
+  }{%
+    AC,  \infty\models A\says B\cansay D\fact &
+    AC,  D\models B\says\fact
+  }}
+  \label{rule:cansay}
+\end{equation}
+
+\section{Comparing different devices}
+
+We can use the SecPAL language to describe the differences between various
+app markets and devices.  The two most popular operating systems are Google's
+Android, and Apple's {iOS}. Apple's offering is usually considered to be the more
+restrictive system as it doesn't allow the use of alternate market places,
+whereas an Android user can choose to relax the restrictions and install from
+anywhere.
+
+For example on iOS an app is only installable on an iPhone if Apple has said
+the app can be installed~\eref{oas:iphoneinstall}. In contrast on Android any
+app can be installed if the user says so~\eref{oas:anduser}. The user also
+trusts any app available on Google's Play Store~\eref{oas:androidinstall}, but
+the zero delegation-depth means that the user will only believe the app is
+installable if Google provides the assertion directly whereas the user
+in~\eref{oas:anduser} is free to delegate the decision because of the infinite
+delegation depth.
+
+\begin{align}
+  \entity{iPhone}&\says\entity{Apple}\cansay\infty\app\installable.
+  \label{oas:iphoneinstall}\\
+  \\
+  \entity{AndroidPhone}&\says\entity{AndroidUser}\cansay\infty\app\installable.\label{oas:anduser}\\
+  \entity{AndroidUser}&\says\Google\cansay0\app\installable.
+  \label{oas:androidinstall}
+\end{align}
+
+Similarly comparisons can be made when apps try to access resources.
+When accessing components like the address book or photos; on iOS this
+is only allowed when the user has explicitly okayed it. Other operating systems
+such as Windows~Mobile also follow this pattern.
+On Android, however, an app can access any resource it declared itself as
+\emph{requiring} it when it was installed.
+
+\begin{align}
+  \entity{iPhone}&\says\entity{User}\cansay0\app\keyword{~can access~}\entity{resource}.\\
+  \\
+  \entity{AndroidPhone}&\says\app\keyword{~can access~}\entity{resource} \nonumber \\
+  \iffacts&\app\installable, \nonumber\\
+  &\app\keyword{~requires~}\entity{resource}.
+\end{align}
+
+This is a brief comparison of the implicit device policies in current markets.
+It shows however that SecPAL is capable of describing the various difference.
+This could be extended in future to allow proper comparisons of different
+markets.
+
+\section{Conclusion and future directions}
+
+We have given a brief introduction to App Guarden and the SecPAL language used
+to describe policies.
+Using the SecPAL language we described some of the differences between current
+systems. The PhD work here is at an early stage. Next steps will include
+porting the SecPAL language to Android and using it to find what kinds of
+device policies are most effective at stopping dangerous apps, without overly
+inconveniencing the user. From here we will build an \emph{enhanced app market}
+with its own set of policies where apps come with
+digital evidence to allow users to trust apps further.
+
+Mobile devices are a growing target for malware, and with app stores appearing
+in conventional computers the differences between mobile and traditional
+computing environments are blurring.  The App Guarden will help give users
+greater assurance their software is secure; and provide a new security
+mechanism to compliment access control and anti-malware techniques.
+
+
+
+\appendix
+
+%\section{Inference tree}
+%
+%\begin{align}
+%  \scalebox{0.8}{%
+%  \infer[\rcansay]{%
+%    AC,  \infty\models\Phone\says\App\meets\Nm
+%  }{%
+%    AC,  \infty\models\eref{sp:GoogleCanSayNm} &
+%    \infer[\rcansay]{%
+%      AC,  \infty\models\Google\says\App\meets\Nm
+%    }{%
+%      AC,  \infty\models\eref{sp:AvcCanSayNm} &
+%      AC,  0\models\eref{sp:AvcSaysNm}
+%    }
+%  }
+%  }\label{prf:nm}\\
+%  \nonumber\\
+%  \scalebox{0.8}{%
+%  \infer[\rcansay]{%
+%    AC,  \infty\models\Phone\says\App\meets\Nll
+%  }{%
+%    AC,  \infty\models\eref{sp:NlliCanSayNll} &
+%    \infer[\rcond{\ref{sp:showsmeets}}]{%
+%      AC,  0\models\Nlli\says\App\meets\Nll
+%    }{%
+%      \infer[\rcond{\ref{sp:NlliSaysEviShowsAppPol}}]{%
+%        AC,  0\models\Nlli\says\Evi\shows\App\meets\Nll
+%      }{%
+%        \models\LocalChecks{\Evi,  \App}{NIL}=\textsf{true}
+%      }
+%    }
+%  }}
+%  \label{prf:nil}\\
+%  \nonumber\\
+%  \scalebox{0.8}{%
+%  \infer[\rcond{\ref{sp:DevicePolicy}}]{%
+%    AC,  \infty\models\Phone\says\App\installable
+%  }{%
+%    \eref{prf:nm} & \eref{prf:nil}
+%  }}
+%  \label{prf:dp}
+%\end{align}
+
+
+\bibliographystyle{plain}
+\bibliography{appguarden}
+\end{document}
+

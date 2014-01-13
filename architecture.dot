@@ -1,0 +1,31 @@
+digraph architecture {
+  compound=true;
+  
+  inferer [label="Checker\nService", shape=record];
+  checker [label="Inference\nService", shape=record];
+
+  subgraph cluster_ag {
+    label="App Guarden Store";
+    rank=same;
+    ag_evi [label="Evidence", shape=record];
+    ag_apps [label="Apps", shape=record];
+  };
+  
+  subgraph cluster_d {
+    label="Phone";
+    rank=same;
+    d_apps [label="Apps", shape=record];
+    d_secpal [label="SecPAL\nEngine", shape=record];
+  };
+
+  d_secpal -> ag_apps [lhead=cluster_ag, ltail=cluster_d, label="trusts"];
+  ag_evi -> d_apps [ltail=cluster_ag, label="supplies"];
+
+  inferer -> ag_evi [label="generates", constraint=false];
+  
+  d_apps -> checker [label="trusts", ltail=cluster_d, constraint=false];
+  checker -> d_apps [label="checks", constraint=false];
+
+  inferer -> checker [style=invis]
+}
+
